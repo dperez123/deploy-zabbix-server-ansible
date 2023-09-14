@@ -1,0 +1,103 @@
+---
+- name: Install Zabbix Server
+  hosts: servers
+  become: yes
+  vars:
+    mariadb_zabbix_password: your-root-mysql-password
+    zabbix_database_password: your-zabbix-password
+  tasks:
+  - name: wget zabbix repo
+    get_url:
+      url:  https://repo.zabbix.com/zabbix/6.4/ubuntu/pool/main/z/zabbix-release/zabbix-release_6.4-1+ubuntu22.04_all.deb
+      dest: /tmp/zabbix-release_6.4-1+ubuntu22.04_all.deb
+
+  - name: install zabbix repo
+    apt: deb=/tmp/zabbix-release_6.4-1+ubuntu22.04_all.deb state=present
+
+  - name: apt update
+    apt: update_cache=yes
+
+  - name: install zabbix-server-mysql
+    apt: name=zabbix-server-mysql state=present
+
+  - name: install zabbix-frontend-php
+    apt: name=zabbix-frontend-php state=present
+
+  - name: install zabbix-apache-conf
+    apt: name=zabbix-apache-conf state=present
+
+  - name: install zabbix-sql-scripts
+    apt: name=zabbix-sql-scripts state=present
+
+  - name: install zabbix-agent
+    apt: name=zabbix-agent state=present
+
+  - name: install apache2
+    apt: name=apache2 state=present
+
+  - name: install mariadb-server
+    apt: name=mariadb-server state=present
+
+  - name: install mariadb-client
+    apt: name=mariadb-client state=present
+
+  - name: install python3-pymysql
+    apt: name=python3-pymysql state=present
+
+  - name: Start Maria DB Server
+    systemd:
+      name: mariadb
+      state: started
+      enabled: yes
+
+  - name: set new root mysql password
+    shell: 'mysql -e "SET PASSWORD = PASSWORD(''{{ mariadb_zabbix_password }}'');"'
+
+  - name: create zabbix database
+    shell: 'mysql -e "create database zabbix character set utf8mb4 collate utf8mb4_bin;"'
+
+  - name: create zabbix user
+    shell: 'mysql -e "grant all privileges on zabbix.* to zabbix@localhost identified by ''{{ zabbix_database_password }}'';"'
+
+  - name: set global log_bin_trust_function_creators
+    shell: 'mysql -e "set global log_bin_trust_function_creators=1;"'
+
+  - name: import initial schema
+    shell: 'zcat /usr/share/zabbix-sql-scripts/mysql/server.sql.gz | mysql --default-character-set=utf8mb4 zabbix -uzabbix -p''{{ zabbix_database_password }}'''
+
+  - name: set global log_bin_trust_function_creators = 0
+    shell: 'mysql -e "set global log_bin_trust_function_creators=0;"'
+
+  - name: set zabbix server config
+    lineinfile:
+      path: /etc/zabbix/zabbix_server.conf
+      regexp: '^DBPassword='
+      line: 'DBPassword={{ zabbix_database_password }}'
+      state: present
+      backup: yes
+
+  - name: set zabbix php config
+    lineinfile:
+      path: /etc/zabbix/apache.conf
+      regexp: '^php_value date.timezone'
+      line: 'php_value date.timezone America/El_Salvador'
+      state: present
+      backup: yes
+
+  - name: start zabbix server
+    systemd:
+      name: zabbix-server
+      state: started
+      enabled: yes
+
+  - name: start zabbix agent
+    systemd:
+      name: zabbix-agent
+      state: started
+      enabled: yes
+
+  - name: restart apache2
+    systemd:
+      name: apache2
+      state: restarted
+      enabled: yes
