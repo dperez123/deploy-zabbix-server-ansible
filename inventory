@@ -1,4 +1,7 @@
+#group of servers
 [servers]
 server-ip-address
+
+#variables
 [servers:vars]
 ansible_user=your-server-user
